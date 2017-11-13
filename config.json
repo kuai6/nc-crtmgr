@@ -1,0 +1,15 @@
+{
+  "db_config": {
+    "host": "127.0.0.1",
+    "port": 27017
+  },
+  "root_cert_path": "ssl/root/rootCA.crt",
+  "root_cert_private_key_path": "ssl/root/rootCA.key",
+  "http_config": {
+    "listen": "127.0.0.1",
+    "port": 8443,
+    "ssl_cert_path": "ssl/server.crt",
+    "ssl_cert_key_path": "ssl/server.key"
+  },
+  "cert_ttl": 30
+}
