@@ -21,11 +21,6 @@ type GenerateRequest struct {
 	Uid      string `json:"uid"`
 	Did      string `json:"did"`
 	Password string `json:"password"`
-	CertOptions struct {
-		Host       string `json:"host"`
-		RsaBits    int    `json:"rsa_bits"`
-		EcdsaCurve string `json:"ecdsa_curve"`
-	} `json:"cert_options"`
 	ValidFrom string `json:"valid_from"`
 	ValidFor  string `json:"valid_for"`
 }
@@ -81,7 +76,7 @@ func main() {
 			mongoDsn := fmt.Sprintf("mongodb://%s:%d/%s", config.DbConfig.Host, config.DbConfig.Port, config.DbConfig.Name)
 			session, err := mgo.Dial(mongoDsn)
 			if err != nil {
-				panic(err)
+				Error.Fatal(err)
 			}
 			//defer session.Close()
 			session.SetMode(mgo.Monotonic, true)
@@ -93,7 +88,29 @@ func main() {
 		Name:  "generator",
 		Scope: di.App,
 		Build: func(ctx di.Context) (interface{}, error) {
-			return new(generator.CryptoTLS), nil
+			config := ctx.Get("config").(*Config);
+			g := new(generator.CryptoTLS)
+			g.DefaultSubject = generator.Subject{
+				CommonName:         config.CertificateSubject.CommonName,
+				Country:            config.CertificateSubject.Country,
+				Province:           config.CertificateSubject.Province,
+				Locality:           config.CertificateSubject.Locality,
+				Organization:       config.CertificateSubject.Organization,
+				OrganizationalUnit: config.CertificateSubject.OrganizationalUnit,
+			}
+
+			crt, err := ioutil.ReadFile(config.RootCertPath)
+			if err != nil {
+				Error.Fatal(fmt.Sprintf("Cant't read root cerificate %s", config.RootCertPath))
+			}
+			key, err := ioutil.ReadFile(config.RootCertKeyPath)
+			if err != nil {
+				Error.Fatal(fmt.Sprintf("Cant't read root cerificate private key %s", config.RootCertKeyPath))
+			}
+			g.LoadRootCA(crt, key)
+			g.DefaultTTL = config.CertTTL
+			g.RsaBits = config.KeyRSABits
+			return g, nil
 		},
 	})
 	context = builder.Build()
@@ -137,12 +154,9 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 		certificateService := service.NewCertificateService(repository, gen)
 
 		o := generator.Options{}
-		o.SetHost(gr.CertOptions.Host)
-		o.SetRsaBits(gr.CertOptions.RsaBits)
-		o.SetEcdsaCurve(gr.CertOptions.EcdsaCurve)
 		o.SetValidFrom(gr.ValidFrom)
 		o.SetValidFor(gr.ValidFor)
-		o.SetDefaultTTL(config.CertTTL)
+		o.SetPassword(gr.Password)
 
 		c, err := certificateService.GenerateCertificate(o)
 		if err != nil {

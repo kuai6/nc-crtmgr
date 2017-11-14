@@ -22,6 +22,15 @@ type Config struct {
 	RootCertPath    string `json:"root_cert_path"`
 	RootCertKeyPath string `json:"root_cert_private_key_path"`
 	CertTTL         int    `json:"cert_ttl"`
+	KeyRSABits      int    `json:"key_rsa_bits"`
+	CertificateSubject struct {
+		CommonName         string `json:"common_name"`
+		Country            string `json:"country"`
+		Province           string `json:"province"`
+		Locality           string `json:"locality"`
+		Organization       string `json:"organization"`
+		OrganizationalUnit string `json:"organizational_unit"`
+	} `json:"certificate_subject"`
 }
 
 func GetConfig() *Config {
@@ -84,5 +93,17 @@ func NewConfig() *Config {
 		RootCertPath:    "root.crt",
 		RootCertKeyPath: "root.key",
 		CertTTL:         30,
+		KeyRSABits:      2048,
+		CertificateSubject: struct {
+			CommonName         string `json:"common_name"`
+			Country            string `json:"country"`
+			Province           string `json:"province"`
+			Locality           string `json:"locality"`
+			Organization       string `json:"organization"`
+			OrganizationalUnit string `json:"organizational_unit"`
+		}{
+			CommonName: "nc.ca", Country: "RU", Province: "Nizhegorodskaya Oblast",
+			Locality:   "Nizhniy Novgorod", Organization: "NC", OrganizationalUnit: "IT Department"},
 	}
 }
+

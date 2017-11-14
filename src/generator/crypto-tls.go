@@ -3,84 +3,77 @@ package generator
 import (
 	"github.com/kuai6/nc-crtmgr/src/certificate"
 	"crypto/rsa"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"fmt"
 	"crypto/rand"
 	"errors"
-	"encoding/pem"
 	"crypto/x509"
 	"math/big"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"time"
 )
 
 type CryptoTLS struct {
+	DefaultSubject Subject
+	RsaBits        int
+	DefaultTTL     int
+	rootCACrt      *x509.Certificate
+	rootCAKey      *rsa.PrivateKey
 }
 
-func (g CryptoTLS) Generate(options Options) (*certificate.Certificate, error) {
-	var privateKey interface{}
-	var publicKey interface{}
+func (g *CryptoTLS) LoadRootCA(crt []byte, key [] byte) error {
 	var err error
+	bcrt, _ := pem.Decode(crt)
+	if g.rootCACrt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
+		return errors.New(fmt.Sprintf("Failed to parse root certificate: %s", err.Error()))
+	}
+	bkey, _ := pem.Decode(key)
+	if g.rootCAKey, err = x509.ParsePKCS1PrivateKey(bkey.Bytes); err != nil {
+		return errors.New(fmt.Sprintf("Failed to parse root certificate private key: %s", err.Error()))
+	}
+	return nil
+}
 
-	getPublicKey := func(priv interface{}) interface{} {
-		switch k := priv.(type) {
-		case *rsa.PrivateKey:
-			return &k.PublicKey
-		case *ecdsa.PrivateKey:
-			return &k.PublicKey
-		default:
-			return nil
-		}
+func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) {
+	var err error
+	// First of all gen new private key
+	newCrtPrivateKey, _ := rsa.GenerateKey(rand.Reader, g.RsaBits)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Failed to generate private key: %s", err))
 	}
 
-	blockForKey := func(priv interface{}) (*pem.Block, error) {
-		switch k := priv.(type) {
-		case *rsa.PrivateKey:
-			return &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}, nil
-		case *ecdsa.PrivateKey:
-			b, err := x509.MarshalECPrivateKey(k)
-			if err != nil {
-				return nil, errors.New(fmt.Sprintf("Unable to marshal ECDSA private key: %s", err))
-			}
-			return &pem.Block{Type: "EC PRIVATE KEY", Bytes: b}, nil
-
-		default:
-			return nil, nil
-		}
-	}
-
+	//then gen certificate serial
 	genSerial := func() (*big.Int, error) {
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 		return rand.Int(rand.Reader, serialNumberLimit)
 	}
-
-	switch options.EcdsaCurve() {
-	case "":
-		privateKey, err = rsa.GenerateKey(rand.Reader, options.RsaBits())
-	case "P224":
-		privateKey, err = ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	case "P256":
-		privateKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	case "P384":
-		privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	case "P521":
-		privateKey, err = ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-	default:
-		return nil, errors.New(fmt.Sprintf("Unrecognized elliptic curve: %s", options.EcdsaCurve()))
-	}
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("failed to generate private key: %s", err))
-	}
-
-	publicKey = getPublicKey(privateKey)
-
 	serialNumber := new(big.Int)
 	serialNumber, err = genSerial()
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("failed to generate serial number: %s", err))
+		return nil, errors.New(fmt.Sprintf("Failed to generate serial number: %s", err))
 	}
 
+	// now we need to create certificate request
+	tcsr := x509.CertificateRequest{
+		Subject: pkix.Name{
+			Country:            []string{g.DefaultSubject.Country},
+			Organization:       []string{g.DefaultSubject.Organization},
+			OrganizationalUnit: []string{g.DefaultSubject.OrganizationalUnit},
+			Locality:           []string{},
+			Province:           []string{},
+			SerialNumber:       fmt.Sprintf("%s", serialNumber),
+			CommonName:         g.DefaultSubject.CommonName,
+		},
+		SignatureAlgorithm: x509.SHA256WithRSA,
+	}
+
+	bcsr, err := x509.CreateCertificateRequest(rand.Reader, &tcsr, newCrtPrivateKey)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Failed to generate CSR: %s", err))
+	}
+	csr, _ := x509.ParseCertificateRequest(bcsr)
+
+	// resolve certificate dates
 	var notBefore time.Time
 	if len(options.ValidFrom()) == 0 {
 		notBefore = time.Now()
@@ -91,7 +84,7 @@ func (g CryptoTLS) Generate(options Options) (*certificate.Certificate, error) {
 		}
 	}
 
-	notAfter := time.Now().Add(time.Duration(options.DefaultTTL()) * 24 * time.Hour)
+	notAfter := time.Now().Add(time.Duration(g.DefaultTTL) * 24 * time.Hour)
 	if len(options.ValidFor()) != 0 {
 		notAfter, err = time.Parse(time.RFC3339, options.ValidFor())
 		if err != nil {
@@ -99,35 +92,50 @@ func (g CryptoTLS) Generate(options Options) (*certificate.Certificate, error) {
 		}
 	}
 
+	// generate certificate with sign
 	cert := x509.Certificate{
+		Signature:          csr.Signature,
+		SignatureAlgorithm: csr.SignatureAlgorithm,
+
+		PublicKeyAlgorithm: csr.PublicKeyAlgorithm,
+		PublicKey:          csr.PublicKey,
+
 		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"Acme Co"},
-		},
-		NotBefore: notBefore,
-		NotAfter:  notAfter,
-		IsCA:      true,
-
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
+		Issuer:       g.rootCACrt.Subject,
+		Subject:      csr.Subject,
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 
-	prk := new(pem.Block)
-	prk, err = blockForKey(privateKey)
+	ck, err := x509.CreateCertificate(rand.Reader, &cert, g.rootCACrt, csr.PublicKey, g.rootCAKey)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("failed to generate block: %s", err))
+		return nil, errors.New(fmt.Sprintf("Failed to generate certificate: %s", err))
 	}
 
-	ck, err := x509.CreateCertificate(rand.Reader, &cert, &cert, publicKey, privateKey)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("failed to generate certificate: %s", err))
+	var pkey, crt *pem.Block
+	if options.Password() != "" {
+		pkey, err = x509.EncryptPEMBlock(
+			rand.Reader, "RSA PRIVATE KEY",
+			x509.MarshalPKCS1PrivateKey(newCrtPrivateKey), []byte(options.Password()), x509.PEMCipherAES128)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("Failed to enctypt certificate key with password: %s", err))
+		}
+
+		crt, err = x509.EncryptPEMBlock(rand.Reader, "CERTIFICATE", ck, []byte(options.Password()), x509.PEMCipherAES128)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("Failed to enctypt certificate with password: %s", err))
+		}
+	} else {
+		pkey = &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(newCrtPrivateKey)}
+		crt = &pem.Block{Type: "CERTIFICATE", Bytes: ck}
 	}
 
 	c := new(certificate.Certificate)
 	c.CreationDateTime = time.Now()
-	c.PrivateKey = fmt.Sprintf("%s", pem.EncodeToMemory(prk))
-	c.Certificate = fmt.Sprintf("%s", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ck}))
+	c.PrivateKey = fmt.Sprintf("%s", pem.EncodeToMemory(pkey))
+	c.Certificate = fmt.Sprintf("%s", pem.EncodeToMemory(crt))
 	c.Serial = serialNumber.String()
 	c.ValidTill = notAfter
 	c.SetActive()

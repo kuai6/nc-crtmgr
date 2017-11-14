@@ -1,10 +1,4 @@
 {
-  "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50a",
-  "uid": "08cbef46-c6d2-11e7-abc4-cec278b6b50a",
-  "password": "qwe123",
-  "cert_options": {
-    "host": "haha.loc",
-    "rsa_bits": 2048,
-    "ecdsa_curve": ""
-  }
+  "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50e",
+  "uid": "08cbef46-c6d2-11e7-abc4-cec278b6b50c"
 }

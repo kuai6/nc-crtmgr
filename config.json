@@ -11,5 +11,6 @@
     "ssl_cert_path": "ssl/server.crt",
     "ssl_cert_key_path": "ssl/server.key"
   },
-  "cert_ttl": 30
+  "cert_ttl": 30,
+  "key_rsa_bits": 2048
 }
