@@ -88,7 +88,7 @@ func main() {
 		Name:  "generator",
 		Scope: di.App,
 		Build: func(ctx di.Context) (interface{}, error) {
-			config := ctx.Get("config").(*Config);
+			config := ctx.Get("config").(*Config)
 			g := new(generator.CryptoTLS)
 			g.DefaultSubject = generator.Subject{
 				CommonName:         config.CertificateSubject.CommonName,

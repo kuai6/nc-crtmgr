@@ -27,8 +27,8 @@ func (c *CertificateService) Save(certificate *certificate.Certificate) error {
 	return c.certificates.Store(certificate)
 }
 
-func (s *CertificateService) GenerateCertificate(options generator.Options) (*certificate.Certificate, error) {
-	return s.generator.Generate(options)
+func (c *CertificateService) GenerateCertificate(options generator.Options) (*certificate.Certificate, error) {
+	return c.generator.Generate(options)
 }
 
 func (c *CertificateService) RemoveExpired() {
