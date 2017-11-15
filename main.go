@@ -15,6 +15,11 @@ import (
 	"github.com/mileusna/crontab"
 	"github.com/sarulabs/di"
 	"gopkg.in/mgo.v2"
+	"flag"
+)
+
+var (
+	cliConfigFilePath = flag.String("config", "", "Config file path")
 )
 
 type GenerateRequest struct {
@@ -48,6 +53,7 @@ type WithdrawalResponse struct {
 var context di.Context
 
 func main() {
+	flag.Parse()
 	//@TODO move to context
 	InitLogger(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
 

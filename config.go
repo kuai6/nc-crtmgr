@@ -35,15 +35,24 @@ type Config struct {
 
 func GetConfig() *Config {
 	config := NewConfig()
-	configFilePath, err := FindConfig()
+	var configFilePath string
+	var err error
+
+	if *cliConfigFilePath != "" {
+		configFilePath = *cliConfigFilePath
+	} else {
+		configFilePath, err = FindConfig()
+	}
 	if err == nil {
 		configFile, err := os.Open(configFilePath)
 		defer configFile.Close()
 		if err != nil {
-			Error.Println(fmt.Sprintf("config file found in %s but could not be read: %s", configFilePath, err.Error()))
+			Error.Println(fmt.Sprintf("Config file found in %s but could not be read: %s", configFilePath, err.Error()))
+			os.Exit(1)
 		}
 		jsonParser := json.NewDecoder(configFile)
 		jsonParser.Decode(&config)
+		Info.Println(fmt.Sprintf("Loading config file: %s", configFilePath))
 	} else {
 		Info.Println("Config file not found, using default config")
 	}

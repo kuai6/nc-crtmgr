@@ -1,0 +1,13 @@
+version: '2'
+services:
+  crtmgr:
+    build: .
+    depends_on:
+      - mongodb.host
+    ports:
+      - "443:443"
+
+  mongodb.host:
+    image: mongo:3.4
+    ports:
+      - "17017:27017"

@@ -1,0 +1,16 @@
+{
+  "db_config": {
+    "host": "mongodb.host",
+    "port": 27017
+  },
+  "root_cert_path": "/go/src/github.com/kuai6/nc-crtmgr/ssl/root/rootCA.crt",
+  "root_cert_private_key_path": "/go/src/github.com/kuai6/nc-crtmgr/ssl/root/rootCA.key",
+  "http_config": {
+    "listen": "",
+    "port": 443,
+    "ssl_cert_path": "/go/src/github.com/kuai6/nc-crtmgr/ssl/server.crt",
+    "ssl_cert_key_path": "/go/src/github.com/kuai6/nc-crtmgr/ssl/server.key"
+  },
+  "cert_ttl": 30,
+  "key_rsa_bits": 2048
+}
