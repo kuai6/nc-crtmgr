@@ -98,3 +98,21 @@ func (r *CertificateRepository) FindExpired() []*certificate.Certificate {
 
 	return result
 }
+
+func (r *CertificateRepository) FindByGidAndDidAndStatus(uid string, did string, status int) []*certificate.Certificate {
+	sess := r.session.Copy()
+	defer sess.Close()
+
+	c := sess.DB(r.db).C(r.collectionName)
+
+	var result []*certificate.Certificate
+	if err := c.Find(bson.M{"$and": []bson.M{
+		{"uid": uid},
+		{"did": did},
+		{"status": status},
+	}}).All(&result); err != nil {
+		return []*certificate.Certificate{}
+	}
+
+	return result
+}

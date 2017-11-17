@@ -11,6 +11,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"time"
+	"encoding/asn1"
+	"encoding/base64"
 )
 
 type CryptoTLS struct {
@@ -91,6 +93,9 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 			return nil, errors.New(fmt.Sprintf("Failed to parse expiration date: %s", err))
 		}
 	}
+	//Custom OID's
+	uid := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 2}
+	did := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 2}
 
 	// generate certificate with sign
 	cert := x509.Certificate{
@@ -99,14 +104,19 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 
 		PublicKeyAlgorithm: csr.PublicKeyAlgorithm,
 		PublicKey:          csr.PublicKey,
-
+		Extensions:			csr.Extensions,
+		ExtraExtensions:    []pkix.Extension{
+			{Id: uid, Value: []byte(fmt.Sprintf("UID:%s", options.Uid()))},
+			{Id: did, Value: []byte(fmt.Sprintf("DID:%s", options.Did()))},
+		},
 		SerialNumber: serialNumber,
 		Issuer:       g.rootCACrt.Subject,
 		Subject:      csr.Subject,
 		NotBefore:    notBefore,
 		NotAfter:     notAfter,
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		IsCA: 		  true,
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	ck, err := x509.CreateCertificate(rand.Reader, &cert, g.rootCACrt, csr.PublicKey, g.rootCAKey)
@@ -122,20 +132,16 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("Failed to enctypt certificate key with password: %s", err))
 		}
-
-		crt, err = x509.EncryptPEMBlock(rand.Reader, "CERTIFICATE", ck, []byte(options.Password()), x509.PEMCipherAES128)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintf("Failed to enctypt certificate with password: %s", err))
-		}
 	} else {
 		pkey = &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(newCrtPrivateKey)}
-		crt = &pem.Block{Type: "CERTIFICATE", Bytes: ck}
 	}
+
+	crt = &pem.Block{Type: "CERTIFICATE", Bytes: ck}
 
 	c := new(certificate.Certificate)
 	c.CreationDateTime = time.Now()
-	c.PrivateKey = fmt.Sprintf("%s", pem.EncodeToMemory(pkey))
-	c.Certificate = fmt.Sprintf("%s", pem.EncodeToMemory(crt))
+	c.PrivateKey = base64.StdEncoding.EncodeToString([]byte(pem.EncodeToMemory(pkey)))
+	c.Certificate = base64.StdEncoding.EncodeToString([]byte(pem.EncodeToMemory(crt)))
 	c.Serial = serialNumber.String()
 	c.ValidTill = notAfter
 	c.SetActive()
@@ -145,6 +151,36 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 	return c, nil
 }
 
-func (g CryptoTLS) validate(certificate certificate.Certificate) bool {
-	return true
+func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (bool, error) {
+
+	opts := x509.VerifyOptions{Intermediates: x509.NewCertPool()}
+	opts.CurrentTime = time.Now()
+
+	opts.Roots = x509.NewCertPool()
+	opts.Roots.AddCert(g.rootCACrt)
+
+	if parent != nil {
+		content, _ := base64.StdEncoding.DecodeString(parent.Certificate)
+		bcrt, _ := pem.Decode(content)
+		var pcrt *x509.Certificate
+		var err error
+		if pcrt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
+			return false, errors.New(fmt.Sprintf("Failed to parse certificate: %s", err.Error()))
+		}
+		opts.Intermediates.AddCert(pcrt)
+	}
+
+	var crt *x509.Certificate
+	var err error
+	bcrt, _ := pem.Decode([]byte(content))
+	if crt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
+		return false, errors.New(fmt.Sprintf("Failed to parse certificate: %s", err.Error()))
+	}
+
+	_ , err = crt.Verify(opts)
+	if err != nil {
+		return false, errors.New(fmt.Sprintf("Failed to validate certificate: %s", err.Error()))
+	}
+
+	return true, nil
 }

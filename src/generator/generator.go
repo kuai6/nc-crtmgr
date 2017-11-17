@@ -13,4 +13,5 @@ type Subject struct {
 
 type Generator interface {
 	Generate(options Options) (*certificate.Certificate, error)
+	Validate(content string, parent *certificate.Certificate) (bool, error)
 }

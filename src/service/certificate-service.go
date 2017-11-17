@@ -28,8 +28,29 @@ func (c *CertificateService) Save(certificate *certificate.Certificate) error {
 }
 
 func (c *CertificateService) GenerateCertificate(options generator.Options) (*certificate.Certificate, error) {
-	return c.generator.Generate(options)
+	crt, err := c.generator.Generate(options)
+	if err == nil {
+		certificates := c.certificates.FindByGidAndDidAndStatus(options.Uid(), options.Did(), certificate.STATUS_ACTIVE)
+		for _, crt := range certificates {
+			crt.SetNotActive()
+			c.certificates.Store(crt)
+		}
+	}
+	return crt, err
 }
+
+func (c *CertificateService) ValidateCertificate(candidate string, parent *certificate.Certificate) (bool, error) {
+	return c.generator.Validate(candidate, parent)
+}
+
+func (c *CertificateService) FetchActiveCertificateByUidAndDid(uid string, did string) (*certificate.Certificate) {
+	certificates := c.certificates.FindByGidAndDidAndStatus(uid, did, certificate.STATUS_ACTIVE)
+	if len(certificates) > 0 {
+		return certificates[0]
+	}
+	return nil
+}
+
 
 func (c *CertificateService) RemoveExpired() {
 	certificates := c.certificates.FindExpired()

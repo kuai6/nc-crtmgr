@@ -16,6 +16,7 @@ import (
 	"github.com/sarulabs/di"
 	"gopkg.in/mgo.v2"
 	"flag"
+	"encoding/base64"
 )
 
 var (
@@ -39,6 +40,9 @@ type GenerateResponse struct {
 }
 
 type ValidateRequest struct {
+	Uid         string `json:"uid"`
+	Did         string `json:"did"`
+	Certificate string `json:"certificate"`
 }
 
 type ValidateResponse struct {
@@ -163,6 +167,8 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 		o.SetValidFrom(gr.ValidFrom)
 		o.SetValidFor(gr.ValidFor)
 		o.SetPassword(gr.Password)
+		o.SetUid(gr.Uid)
+		o.SetDid(gr.Did)
 
 		c, err := certificateService.GenerateCertificate(o)
 		if err != nil {
@@ -206,6 +212,61 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 }
 
 func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+
+	decoder := json.NewDecoder(r.Body)
+	var vr ValidateRequest
+	err := decoder.Decode(&vr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("400 - Bad request!"))
+	}
+	defer r.Body.Close()
+
+	done := make(chan certificate.Certificate)
+	e := make(chan error)
+
+	go func() {
+		config := context.Get("config").(*Config)
+		session := context.Get("mongo").(*mgo.Session)
+		gen := context.Get("generator").(generator.Generator)
+
+		repository, _ := mongo.NewCertificateRepository(config.DbConfig.Name, session)
+		certificateService := service.NewCertificateService(repository, gen)
+
+		parent := certificateService.FetchActiveCertificateByUidAndDid(vr.Uid, vr.Did)
+
+		sDec, _ := base64.StdEncoding.DecodeString(vr.Certificate)
+
+		result, err := certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), parent)
+
+		fmt.Println(result)
+		fmt.Println(err)
+	}()
+
+	select {
+	case err := <-e:
+		generateResult := ErrorResponse{err.Error()}
+		result, _ := json.Marshal(generateResult)
+		w.Write(result)
+		w.WriteHeader(http.StatusInternalServerError)
+	case c := <-done:
+		generateResult := GenerateResponse{}
+		generateResult.Uid = c.Uid
+		generateResult.Did = c.Did
+		generateResult.Certificate = c.Certificate
+		generateResult.PrivateKey = c.PrivateKey
+		generateResult.ValidTill = c.ValidTill.String()
+		result, err := json.Marshal(generateResult)
+		if err != nil {
+			msg := fmt.Sprintf("Internal Server Error: %s", err)
+			Error.Fatal(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		w.Write(result)
+	}
+
 
 }
 
