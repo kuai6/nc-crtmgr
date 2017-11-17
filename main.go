@@ -46,6 +46,10 @@ type ValidateRequest struct {
 }
 
 type ValidateResponse struct {
+	Uid         string `json:"uid"`
+	Did         string `json:"did"`
+	Result      bool   `json:"result"`
+	Reason		string `json:"reason"`
 }
 
 type WithdrawalRequest struct {
@@ -223,7 +227,7 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 	}
 	defer r.Body.Close()
 
-	done := make(chan certificate.Certificate)
+	done := make(chan ValidateResponse)
 	e := make(chan error)
 
 	go func() {
@@ -236,12 +240,29 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 
 		parent := certificateService.FetchActiveCertificateByUidAndDid(vr.Uid, vr.Did)
 
-		sDec, _ := base64.StdEncoding.DecodeString(vr.Certificate)
+		sDec, err := base64.StdEncoding.DecodeString(vr.Certificate)
+		if err != nil {
+			Error.Println(err)
+			e <- err
+			close(done)
+			close(e)
+			return
+		}
 
 		result, err := certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), parent)
+		var reason string
+		if err != nil {
+			reason = err.Error()
+		}
 
-		fmt.Println(result)
-		fmt.Println(err)
+		done <- ValidateResponse{
+			Uid: vr.Uid,
+			Did: vr.Did,
+			Result: result,
+			Reason: reason,
+		}
+		close(e)
+		close(done)
 	}()
 
 	select {
@@ -250,14 +271,8 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 		result, _ := json.Marshal(generateResult)
 		w.Write(result)
 		w.WriteHeader(http.StatusInternalServerError)
-	case c := <-done:
-		generateResult := GenerateResponse{}
-		generateResult.Uid = c.Uid
-		generateResult.Did = c.Did
-		generateResult.Certificate = c.Certificate
-		generateResult.PrivateKey = c.PrivateKey
-		generateResult.ValidTill = c.ValidTill.String()
-		result, err := json.Marshal(generateResult)
+	case r := <-done:
+		result, err := json.Marshal(r)
 		if err != nil {
 			msg := fmt.Sprintf("Internal Server Error: %s", err)
 			Error.Fatal(msg)
@@ -266,8 +281,6 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 		}
 		w.Write(result)
 	}
-
-
 }
 
 func CleanUp() {

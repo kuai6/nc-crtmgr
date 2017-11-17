@@ -116,7 +116,7 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 		NotAfter:     notAfter,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		IsCA: 		  true,
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	ck, err := x509.CreateCertificate(rand.Reader, &cert, g.rootCACrt, csr.PublicKey, g.rootCAKey)
@@ -153,10 +153,13 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 
 func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (bool, error) {
 
-	opts := x509.VerifyOptions{Intermediates: x509.NewCertPool()}
-	opts.CurrentTime = time.Now()
+	opts := x509.VerifyOptions{
+		Roots: x509.NewCertPool(),
+		Intermediates: x509.NewCertPool(),
 
-	opts.Roots = x509.NewCertPool()
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}
+	opts.CurrentTime = time.Now()
 	opts.Roots.AddCert(g.rootCACrt)
 
 	if parent != nil {
