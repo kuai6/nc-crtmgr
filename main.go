@@ -4,19 +4,18 @@ import (
 	"net/http"
 	"encoding/json"
 	"io/ioutil"
-	"os"
 	"fmt"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/kuai6/nc-crtmgr/src/mongo"
 	"github.com/kuai6/nc-crtmgr/src/generator"
-	"github.com/kuai6/nc-crtmgr/src/certificate"
 	"github.com/kuai6/nc-crtmgr/src/service"
 	"github.com/mileusna/crontab"
 	"github.com/sarulabs/di"
 	"gopkg.in/mgo.v2"
 	"flag"
 	"encoding/base64"
+	"time"
 )
 
 var (
@@ -37,6 +36,8 @@ type GenerateResponse struct {
 	Certificate string `json:"certificate"`
 	PrivateKey  string `json:"private_key"`
 	ValidTill   string `json:"valid_till"`
+	Result      bool   `json:"result"`
+	Reason      string `json:"reason"`
 }
 
 type ValidateRequest struct {
@@ -53,17 +54,23 @@ type ValidateResponse struct {
 }
 
 type WithdrawalRequest struct {
+	Uid         string `json:"uid"`
+	Did         string `json:"did"`
+	Certificate string `json:"certificate"`
 }
 
 type WithdrawalResponse struct {
+	Uid    string `json:"uid"`
+	Did    string `json:"did"`
+	Result bool   `json:"result"`
+	Reason string `json:"reason"`
 }
 
 var context di.Context
 
 func main() {
 	flag.Parse()
-	//@TODO move to context
-	InitLogger(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
+	InitLogger()
 
 	builder, _ := di.NewBuilder()
 	builder.AddDefinition(di.Definition{
@@ -90,7 +97,7 @@ func main() {
 			mongoDsn := fmt.Sprintf("mongodb://%s:%d/%s", config.DbConfig.Host, config.DbConfig.Port, config.DbConfig.Name)
 			session, err := mgo.Dial(mongoDsn)
 			if err != nil {
-				Error.Fatal(err)
+				logger.Critical(err)
 			}
 			//defer session.Close()
 			session.SetMode(mgo.Monotonic, true)
@@ -115,11 +122,11 @@ func main() {
 
 			crt, err := ioutil.ReadFile(config.RootCertPath)
 			if err != nil {
-				Error.Fatal(fmt.Sprintf("Cant't read root cerificate %s", config.RootCertPath))
+				logger.Criticalf("Cant't read root cerificate %s", config.RootCertPath)
 			}
 			key, err := ioutil.ReadFile(config.RootCertKeyPath)
 			if err != nil {
-				Error.Fatal(fmt.Sprintf("Cant't read root cerificate private key %s", config.RootCertKeyPath))
+				logger.Criticalf("Cant't read root cerificate private key %s", config.RootCertKeyPath)
 			}
 			g.LoadRootCA(crt, key)
 			g.DefaultTTL = config.CertTTL
@@ -141,25 +148,31 @@ func main() {
 		config.HttpConfig.SSLCertKeyPath,
 		router)
 	if err != nil {
-		Error.Fatal("ListenAndServe: ", err)
+		logger.Fatal(err)
 	}
 }
 
 func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	var result []byte
+	var err error
+	var gr GenerateRequest
 
 	decoder := json.NewDecoder(r.Body)
-	var gr GenerateRequest
-	err := decoder.Decode(&gr)
+	err = decoder.Decode(&gr)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("400 - Bad request!"))
 	}
 	defer r.Body.Close()
 
-	done := make(chan certificate.Certificate)
-	e := make(chan error)
+	done := make(chan GenerateResponse)
 	go func() {
+		var response GenerateResponse
+		response.Uid = gr.Uid
+		response.Did = gr.Did
+		response.Result = true
+
 		config := context.Get("config").(*Config)
 		session := context.Get("mongo").(*mgo.Session)
 		gen := context.Get("generator").(generator.Generator)
@@ -176,51 +189,39 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 
 		c, err := certificateService.GenerateCertificate(o)
 		if err != nil {
-			Error.Println(err)
-			e <- err
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
 			close(done)
-			close(e)
 			return
 		}
 
-		c.Did = gr.Did
-		c.Uid = gr.Uid
-		certificateService.Save(c)
-		done <- *c
-		close(e)
+		response.Certificate = c.CertificateBase64()
+		response.PrivateKey = c.PrivateKeyBase64()
+		response.ValidTill = c.ValidTill().Format(time.RFC3339)
+		done <- response
 		close(done)
 	}()
 
-	select {
-	case err := <-e:
-		generateResult := ErrorResponse{err.Error()}
-		result, _ := json.Marshal(generateResult)
-		w.Write(result)
+	result, err = json.Marshal(<-done)
+	if err != nil {
+		msg := fmt.Sprintf("Internal Server Error: %s", err)
+		logger.Error(msg)
+		http.Error(w, msg, http.StatusInternalServerError)
 		w.WriteHeader(http.StatusInternalServerError)
-	case c := <-done:
-		generateResult := GenerateResponse{}
-		generateResult.Uid = c.Uid
-		generateResult.Did = c.Did
-		generateResult.Certificate = c.Certificate
-		generateResult.PrivateKey = c.PrivateKey
-		generateResult.ValidTill = c.ValidTill.String()
-		result, err := json.Marshal(generateResult)
-		if err != nil {
-			msg := fmt.Sprintf("Internal Server Error: %s", err)
-			Error.Fatal(msg)
-			http.Error(w, msg, http.StatusInternalServerError)
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		w.Write(result)
+		return
 	}
+	w.Write(result)
 }
 
 func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	var result []byte
+	var err error
+	var vr ValidateRequest
 
 	decoder := json.NewDecoder(r.Body)
-	var vr ValidateRequest
-	err := decoder.Decode(&vr)
+	err = decoder.Decode(&vr)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("400 - Bad request!"))
@@ -228,9 +229,12 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 	defer r.Body.Close()
 
 	done := make(chan ValidateResponse)
-	e := make(chan error)
-
 	go func() {
+		var response ValidateResponse
+		response.Uid = vr.Uid
+		response.Did = vr.Did
+		response.Result = true
+
 		config := context.Get("config").(*Config)
 		session := context.Get("mongo").(*mgo.Session)
 		gen := context.Get("generator").(generator.Generator)
@@ -242,45 +246,118 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 
 		sDec, err := base64.StdEncoding.DecodeString(vr.Certificate)
 		if err != nil {
-			Error.Println(err)
-			e <- err
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
 			close(done)
-			close(e)
 			return
 		}
 
-		result, err := certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), parent)
-		var reason string
+		response.Result, err = certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), parent)
 		if err != nil {
-			reason = err.Error()
+			response.Reason = err.Error()
 		}
 
-		done <- ValidateResponse{
-			Uid: vr.Uid,
-			Did: vr.Did,
-			Result: result,
-			Reason: reason,
-		}
-		close(e)
+		done <- response
 		close(done)
 	}()
 
-	select {
-	case err := <-e:
-		generateResult := ErrorResponse{err.Error()}
-		result, _ := json.Marshal(generateResult)
-		w.Write(result)
+	result, err = json.Marshal(<-done)
+	if err != nil {
+		msg := fmt.Sprintf("Internal Server Error: %s", err)
+		logger.Error(msg)
+		http.Error(w, msg, http.StatusInternalServerError)
 		w.WriteHeader(http.StatusInternalServerError)
-	case r := <-done:
-		result, err := json.Marshal(r)
-		if err != nil {
-			msg := fmt.Sprintf("Internal Server Error: %s", err)
-			Error.Fatal(msg)
-			http.Error(w, msg, http.StatusInternalServerError)
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		w.Write(result)
+		return
 	}
+	w.Write(result)
+}
+
+func WithdrawalHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	var result []byte
+	var err error
+	var wr WithdrawalRequest
+
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&wr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("400 - Bad request!"))
+		return
+	}
+	defer r.Body.Close()
+
+	done := make(chan WithdrawalResponse)
+	go func() {
+		var response WithdrawalResponse
+		response.Uid = wr.Did
+		response.Did = wr.Did
+		response.Result = true
+
+		config := context.Get("config").(*Config)
+		session := context.Get("mongo").(*mgo.Session)
+		gen := context.Get("generator").(generator.Generator)
+
+		repository, _ := mongo.NewCertificateRepository(config.DbConfig.Name, session)
+		certificateService := service.NewCertificateService(repository, gen)
+
+		sDec, err := base64.StdEncoding.DecodeString(wr.Certificate)
+		if err != nil {
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
+			close(done)
+			return
+		}
+
+		_, err = certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), nil)
+		if err != nil {
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
+			close(done)
+			return
+		}
+
+		cert, err := certificateService.FetchCertificateObjectByItContent(fmt.Sprintf("%s", sDec))
+		if err != nil {
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
+			close(done)
+			return
+		}
+		if cert == nil {
+			response.Result = false
+			response.Reason = "Certificate not found"
+			done <- response
+			close(done)
+			return
+		}
+
+		err = certificateService.Withdraw(cert)
+		if err != nil {
+			response.Result = false
+			response.Reason = err.Error()
+			done <- response
+			close(done)
+			return
+		}
+
+		done <- response
+		close(done)
+	}()
+
+	result, err = json.Marshal(<-done)
+	if err != nil {
+		msg := fmt.Sprintf("Internal Server Error: %s", err)
+		logger.Error(msg)
+		http.Error(w, msg, http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(result)
 }
 
 func CleanUp() {

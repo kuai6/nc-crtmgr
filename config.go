@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"fmt"
 	"encoding/json"
 	"errors"
 )
@@ -47,14 +46,14 @@ func GetConfig() *Config {
 		configFile, err := os.Open(configFilePath)
 		defer configFile.Close()
 		if err != nil {
-			Error.Println(fmt.Sprintf("Config file found in %s but could not be read: %s", configFilePath, err.Error()))
+			logger.Errorf("Config file found in %s but could not be read: %s", configFilePath, err.Error())
 			os.Exit(1)
 		}
 		jsonParser := json.NewDecoder(configFile)
 		jsonParser.Decode(&config)
-		Info.Println(fmt.Sprintf("Loading config file: %s", configFilePath))
+		logger.Infof("Loading config file: %s", configFilePath)
 	} else {
-		Info.Println("Config file not found, using default config")
+		logger.Infof("Config file not found, using default config")
 	}
 
 	return config

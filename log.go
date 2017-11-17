@@ -2,35 +2,38 @@ package main
 
 import (
 	"log"
-	"io"
+	"github.com/op/go-logging"
+	"os"
+	"flag"
 )
 
 var (
-	Trace   *log.Logger
-	Info    *log.Logger
-	Warning *log.Logger
-	Error   *log.Logger
+	logger  *logging.Logger
+	verbose = flag.Bool("v", false, "Verbose")
 )
 
-func InitLogger(
-	traceHandle io.Writer,
-	infoHandle io.Writer,
-	warningHandle io.Writer,
-	errorHandle io.Writer) {
+func InitLogger() {
+	logger = logging.MustGetLogger("app")
 
-	Trace = log.New(traceHandle,
-		"TRACE: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+	var l = "ERROR"
+	if *verbose == true {
+		l = "DEBUG"
+	}
 
-	Info = log.New(infoHandle,
-		"INFO: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+	level, err := logging.LogLevel(l)
+	if err != nil {
+		log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime).Panicln(err.Error())
+		os.Exit(1)
+	}
 
-	Warning = log.New(warningHandle,
-		"WARNING: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+	backend := logging.NewLogBackend(os.Stdout, "", 0)
 
-	Error = log.New(errorHandle,
-		"ERROR: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+	backendFormatted := logging.NewBackendFormatter(
+		backend,
+		logging.MustStringFormatter("%{time:2006-01-02 15:04:05} [%{level:.4s}]: %{message}"))
+
+	backendLeveled := logging.AddModuleLevel(backendFormatted)
+	backendLeveled.SetLevel(level, "")
+
+	logging.SetBackend(backendLeveled);
 }

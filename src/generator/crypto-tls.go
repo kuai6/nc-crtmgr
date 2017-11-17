@@ -12,8 +12,11 @@ import (
 	"encoding/pem"
 	"time"
 	"encoding/asn1"
-	"encoding/base64"
+	"regexp"
+	"strings"
 )
+
+var oid = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 2}
 
 type CryptoTLS struct {
 	DefaultSubject Subject
@@ -93,9 +96,6 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 			return nil, errors.New(fmt.Sprintf("Failed to parse expiration date: %s", err))
 		}
 	}
-	//Custom OID's
-	uid := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 2}
-	did := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 2}
 
 	// generate certificate with sign
 	cert := x509.Certificate{
@@ -106,8 +106,8 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 		PublicKey:          csr.PublicKey,
 		Extensions:			csr.Extensions,
 		ExtraExtensions:    []pkix.Extension{
-			{Id: uid, Value: []byte(fmt.Sprintf("UID:%s", options.Uid()))},
-			{Id: did, Value: []byte(fmt.Sprintf("DID:%s", options.Did()))},
+			{Id: oid, Value: []byte(fmt.Sprintf("UID:%s", options.Uid()))},
+			{Id: oid, Value: []byte(fmt.Sprintf("DID:%s", options.Did()))},
 		},
 		SerialNumber: serialNumber,
 		Issuer:       g.rootCACrt.Subject,
@@ -139,13 +139,15 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 	crt = &pem.Block{Type: "CERTIFICATE", Bytes: ck}
 
 	c := new(certificate.Certificate)
-	c.CreationDateTime = time.Now()
-	c.PrivateKey = base64.StdEncoding.EncodeToString([]byte(pem.EncodeToMemory(pkey)))
-	c.Certificate = base64.StdEncoding.EncodeToString([]byte(pem.EncodeToMemory(crt)))
-	c.Serial = serialNumber.String()
-	c.ValidTill = notAfter
+	c.SetCreationDateTime(time.Now())
+	c.SetPrivateKey(string(pem.EncodeToMemory(pkey)))
+	c.SetCertificate(string(pem.EncodeToMemory(crt)))
+	c.SetSerial(serialNumber.String())
+	c.SetValidTill(notAfter)
 	c.SetActive()
-	if time.Now().After(c.ValidTill) {
+	c.SetUid(options.Uid())
+	c.SetDid(options.Did())
+	if time.Now().After(c.ValidTill()) {
 		c.SetNotActive()
 	}
 	return c, nil
@@ -163,8 +165,7 @@ func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (b
 	opts.Roots.AddCert(g.rootCACrt)
 
 	if parent != nil {
-		content, _ := base64.StdEncoding.DecodeString(parent.Certificate)
-		bcrt, _ := pem.Decode(content)
+		bcrt, _ := pem.Decode([]byte(parent.Certificate()))
 		var pcrt *x509.Certificate
 		var err error
 		if pcrt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
@@ -186,4 +187,29 @@ func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (b
 	}
 
 	return true, nil
+}
+
+func (g *CryptoTLS) ParseUidDid(content string) (string, string, error) {
+	bcrt, _ := pem.Decode([]byte(content))
+	var crt *x509.Certificate
+	var err error
+	if crt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
+		return "", "", errors.New(fmt.Sprintf("Failed to parse certificate: %s", err.Error()))
+	}
+
+	var uid, did string
+	r, _ := regexp.Compile(`^(UID|DID):(.+$)`)
+	for _, extension := range crt.Extensions {
+		if extension.Id.Equal(oid) && r.Match(extension.Value) {
+			values := strings.Split(string(extension.Value), ":")
+			if values[0] == "UID" {
+				uid = values[1]
+			}
+			if values[0] == "DID" {
+				did = values[1]
+			}
+		}
+	}
+
+	return uid, did, nil
 }
