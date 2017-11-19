@@ -23,9 +23,9 @@ var (
 )
 
 type GenerateRequest struct {
-	Uid      string `json:"uid"`
-	Did      string `json:"did"`
-	Password string `json:"password"`
+	Uid       string `json:"uid"`
+	Did       string `json:"did"`
+	Password  string `json:"password"`
 	ValidFrom string `json:"valid_from"`
 	ValidFor  string `json:"valid_for"`
 }
@@ -51,6 +51,25 @@ type ValidateResponse struct {
 	Did         string `json:"did"`
 	Result      bool   `json:"result"`
 	Reason		string `json:"reason"`
+}
+
+type ValidateRequestWithNewCertificate struct {
+	Uid         string `json:"uid"`
+	Did         string `json:"did"`
+	Certificate string `json:"certificate"`
+	Password    string `json:"password"`
+	ValidFrom   string `json:"valid_from"`
+	ValidFor    string `json:"valid_for"`
+}
+
+type ValidateResponseWithNewCertificate struct {
+	Uid         string `json:"uid"`
+	Did         string `json:"did"`
+	Certificate string `json:"certificate"`
+	PrivateKey  string `json:"private_key"`
+	ValidTill   string `json:"valid_till"`
+	Result      bool   `json:"result"`
+	Reason      string `json:"reason"`
 }
 
 type WithdrawalRequest struct {
@@ -270,6 +289,97 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 	}
 	w.Write(result)
 }
+
+func ValidateWithNewCertificateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	var result []byte
+	var err error
+	var vr ValidateRequestWithNewCertificate
+
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&vr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("400 - Bad request!"))
+	}
+	defer r.Body.Close()
+
+	done := make(chan ValidateResponseWithNewCertificate)
+	go func() {
+		var response ValidateResponseWithNewCertificate
+		response.Uid = vr.Uid
+		response.Did = vr.Did
+		response.Result = true
+
+		config := context.Get("config").(*Config)
+		session := context.Get("mongo").(*mgo.Session)
+		gen := context.Get("generator").(generator.Generator)
+
+		repository, _ := mongo.NewCertificateRepository(config.DbConfig.Name, session)
+		certificateService := service.NewCertificateService(repository, gen)
+
+		//ok if cert have a level 3 or lower
+		isL3 := false
+		itrCrt := certificateService.FetchActiveCertificateByUidAndDid(vr.Uid, vr.Did)
+		if itrCrt != nil && itrCrt.GetCertificateBase64() != vr.Certificate {
+			isL3 = true
+		}
+
+		if isL3 {
+			o := generator.Options{}
+			o.SetValidFrom(vr.ValidFrom)
+			o.SetValidFor(vr.ValidFor)
+			o.SetPassword(vr.Password)
+			o.SetUid(vr.Uid)
+			o.SetDid(vr.Did)
+
+			cert, err := certificateService.GenerateCertificate(o)
+			if err != nil {
+				response.Result = false
+				response.Reason = err.Error()
+				done <- response
+				close(done)
+				return
+			}
+
+			response.Certificate = cert.GetCertificateBase64()
+			response.PrivateKey = cert.GetPrivateKeyBase64()
+			response.ValidTill = cert.GetValidTill().Format(time.RFC3339)
+		} else {
+			// Specify why do this ?
+			sDec, err := base64.StdEncoding.DecodeString(vr.Certificate)
+			if err != nil {
+				response.Result = false
+				response.Reason = err.Error()
+				done <- response
+				close(done)
+				return
+			}
+
+			response.Result, err = certificateService.ValidateCertificate(vr.Uid, vr.Did, fmt.Sprintf("%s", sDec))
+			if err != nil {
+				response.Reason = err.Error()
+				done <- response
+				close(done)
+				return
+			}
+		}
+
+		done <- response
+		close(done)
+	}()
+
+	result, err = json.Marshal(<-done)
+	if err != nil {
+		msg := fmt.Sprintf("Internal Server Error: %s", err)
+		logger.Error(msg)
+		http.Error(w, msg, http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(result)
+}
+
 
 func WithdrawalHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")

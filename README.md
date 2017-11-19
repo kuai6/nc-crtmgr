@@ -110,11 +110,11 @@ $ go build
 
 ## API
 
-### Request content
-Each request contain json structure with required fields ```uid``` and ```did```. Each request must be with header ```Content-type: application/json; charset=UTF-8```
+#### Request content
+Each request contain json structure with required fields ```uid``` and ```did```. Each request must be with header ```Content-type: application/json; charset=UTF-8```. The ```certificate``` fields is optional anf in base64 encode. The ```password``` filed is optional.
 
-### Response content
-Each response contain json structure with required fields ```uid```, ```did```, ```result``` and ```reason```. When error occurs the ```result``` field is set to **false** and the ```reason``` field is set error reason describe.
+#### Response content
+Each response contain json structure with required fields ```uid```, ```did```, ```result``` and ```reason```. When error occurs the ```result``` field is set to **false** and the ```reason``` field is set error reason describe. The ```certificate``` and ```private_key``` fields are in base64 encode.
 
 
 #### Generate certificate request
@@ -141,6 +141,34 @@ Response:
   "reason":""
 }
 ```
+
+
+#### Generate certificate with encrypted private key
+
+Method: POST
+Endpoint: /api/v1/generate
+Post data:
+```
+{
+  "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50d",
+  "uid": "08cbef46-c6d2-11e7-abc4-cec278b6b50f",
+  "password": "somepass123
+}
+```
+
+Response:
+```
+{
+  "uid":"08cbef46-c6d2-11e7-abc4-cec278b6b50f",
+  "did":"fc6e1864-c6d1-11e7-abc4-cec278b6b50d",
+  "certificate": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk...",
+  "private_key":"LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0...",
+  "valid_till":"2017-12-19T12:19:27+03:00",
+  "result":true,
+  "reason":""
+}
+```
+
 
 #### Validate certificate
 
