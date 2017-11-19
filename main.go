@@ -196,9 +196,9 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 			return
 		}
 
-		response.Certificate = c.CertificateBase64()
-		response.PrivateKey = c.PrivateKeyBase64()
-		response.ValidTill = c.ValidTill().Format(time.RFC3339)
+		response.Certificate = c.GetCertificateBase64()
+		response.PrivateKey = c.GetPrivateKeyBase64()
+		response.ValidTill = c.GetValidTill().Format(time.RFC3339)
 		done <- response
 		close(done)
 	}()
@@ -242,8 +242,6 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 		repository, _ := mongo.NewCertificateRepository(config.DbConfig.Name, session)
 		certificateService := service.NewCertificateService(repository, gen)
 
-		parent := certificateService.FetchActiveCertificateByUidAndDid(vr.Uid, vr.Did)
-
 		sDec, err := base64.StdEncoding.DecodeString(vr.Certificate)
 		if err != nil {
 			response.Result = false
@@ -253,7 +251,7 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 			return
 		}
 
-		response.Result, err = certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), parent)
+		response.Result, err = certificateService.ValidateCertificate(vr.Uid, vr.Did, fmt.Sprintf("%s", sDec))
 		if err != nil {
 			response.Reason = err.Error()
 		}
@@ -311,7 +309,7 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 			return
 		}
 
-		_, err = certificateService.ValidateCertificate(fmt.Sprintf("%s", sDec), nil)
+		_, err = certificateService.ValidateCertificate(wr.Uid, wr.Did, fmt.Sprintf("%s", sDec))
 		if err != nil {
 			response.Result = false
 			response.Reason = err.Error()

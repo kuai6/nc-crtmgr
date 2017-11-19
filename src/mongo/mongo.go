@@ -49,7 +49,7 @@ func (r *CertificateRepository) Store(certificate *certificate.Certificate) erro
 
 	c := sess.DB(r.db).C(r.collectionName)
 
-	_, err := c.Upsert(bson.M{"serial": certificate.Serial}, bson.M{"$set": certificate})
+	_, err := c.Upsert(bson.M{"serial": certificate.GetSerial()}, bson.M{"$set": certificate})
 
 	return err
 }

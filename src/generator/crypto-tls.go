@@ -1,7 +1,6 @@
 package generator
 
 import (
-	"github.com/kuai6/nc-crtmgr/src/certificate"
 	"crypto/rsa"
 	"fmt"
 	"crypto/rand"
@@ -39,7 +38,7 @@ func (g *CryptoTLS) LoadRootCA(crt []byte, key [] byte) error {
 	return nil
 }
 
-func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) {
+func (g *CryptoTLS) Generate(options Options) (*CertificateDTO, error) {
 	var err error
 	// First of all gen new private key
 	newCrtPrivateKey, _ := rsa.GenerateKey(rand.Reader, g.RsaBits)
@@ -138,22 +137,16 @@ func (g *CryptoTLS) Generate(options Options) (*certificate.Certificate, error) 
 
 	crt = &pem.Block{Type: "CERTIFICATE", Bytes: ck}
 
-	c := new(certificate.Certificate)
-	c.SetCreationDateTime(time.Now())
-	c.SetPrivateKey(string(pem.EncodeToMemory(pkey)))
-	c.SetCertificate(string(pem.EncodeToMemory(crt)))
-	c.SetSerial(serialNumber.String())
-	c.SetValidTill(notAfter)
-	c.SetActive()
-	c.SetUid(options.Uid())
-	c.SetDid(options.Did())
-	if time.Now().After(c.ValidTill()) {
-		c.SetNotActive()
-	}
-	return c, nil
+	return &CertificateDTO{
+		certificate: string(pem.EncodeToMemory(crt)),
+		privateKey:  string(pem.EncodeToMemory(pkey)),
+		notAfter:    notAfter,
+		notBefore:   notBefore,
+		serial:      serialNumber.String(),
+	}, nil
 }
 
-func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (bool, error) {
+func (g *CryptoTLS) Validate(content string, intermediate string) (bool, error) {
 
 	opts := x509.VerifyOptions{
 		Roots: x509.NewCertPool(),
@@ -164,8 +157,8 @@ func (g *CryptoTLS) Validate(content string, parent *certificate.Certificate) (b
 	opts.CurrentTime = time.Now()
 	opts.Roots.AddCert(g.rootCACrt)
 
-	if parent != nil {
-		bcrt, _ := pem.Decode([]byte(parent.Certificate()))
+	if intermediate != "" {
+		bcrt, _ := pem.Decode([]byte(intermediate))
 		var pcrt *x509.Certificate
 		var err error
 		if pcrt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
@@ -212,4 +205,15 @@ func (g *CryptoTLS) ParseUidDid(content string) (string, string, error) {
 	}
 
 	return uid, did, nil
+}
+
+func (g *CryptoTLS) ParseDates(content string) (*time.Time, *time.Time, error) {
+	bcrt, _ := pem.Decode([]byte(content))
+	var crt *x509.Certificate
+	var err error
+	if crt, err = x509.ParseCertificate(bcrt.Bytes); err != nil {
+		return nil, nil, errors.New(fmt.Sprintf("Failed to parse certificate: %s", err.Error()))
+	}
+
+	return &crt.NotAfter, &crt.NotBefore, nil
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/kuai6/nc-crtmgr/src/generator"
 	"github.com/kuai6/nc-crtmgr/src/certificate"
 	"time"
+	"errors"
 )
 
 type CertificateServiceInterface interface {
@@ -29,20 +30,47 @@ func (c *CertificateService) Save(certificate *certificate.Certificate) error {
 }
 
 func (c *CertificateService) GenerateCertificate(options generator.Options) (*certificate.Certificate, error) {
-	crt, err := c.generator.Generate(options)
+	var err error
+	certificateDTO, err := c.generator.Generate(options)
 	if err == nil {
 		certificates := c.certificates.FindByGidAndDidAndStatus(options.Uid(), options.Did(), certificate.STATUS_ACTIVE)
-		for _, crt := range certificates {
-			crt.SetNotActive()
-			c.certificates.Store(crt)
+		for _, crt_ := range certificates {
+			crt_.SetNotActive()
+			c.certificates.Store(crt_)
 		}
 	}
-	c.Save(crt)
+	crt := new(certificate.Certificate)
+	crt.SetCreationDateTime(time.Now())
+	crt.SetPrivateKey(certificateDTO.PrivateKey())
+	crt.SetCertificate(certificateDTO.Certificate())
+	crt.SetSerial(certificateDTO.Serial())
+	crt.SetValidTill(certificateDTO.NotAfter())
+	crt.SetActive()
+	crt.SetUid(options.Uid())
+	crt.SetDid(options.Did())
+	if time.Now().After(certificateDTO.NotAfter()) {
+		crt.SetNotActive()
+	}
+	err = c.certificates.Store(crt)
 	return crt, err
 }
 
-func (c *CertificateService) ValidateCertificate(candidate string, parent *certificate.Certificate) (bool, error) {
-	return c.generator.Validate(candidate, parent)
+func (c *CertificateService) ValidateCertificate(uid string, did string, candidate string) (bool, error) {
+	// first of all try to get uid and did
+	cUid, cDid, _ := c.generator.ParseUidDid(candidate)
+	if cUid != "" && cDid != "" {
+		if cUid != uid || cDid != did {
+			return false, errors.New("Certificate UID or DID not match with given")
+		}
+	}
+
+	//try to fetch intermediate certificate with give uid and did
+	itrCrt := c.FetchActiveCertificateByUidAndDid(uid, did)
+	if itrCrt == nil {
+		return false, errors.New("Certificate wit given UID and DID not found")
+	}
+
+	return c.generator.Validate(candidate, itrCrt.GetCertificate())
 }
 
 func (c *CertificateService) FetchCertificateObjectByItContent(candidate string) (*certificate.Certificate, error) {

@@ -62,7 +62,7 @@ func GetConfig() *Config {
 func FindConfig() (string, error) {
 	var paths = [] string{
 		"config.json",
-		"config/application.json",
+		"config/config.json",
 	}
 
 	var found string

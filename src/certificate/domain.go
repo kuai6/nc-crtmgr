@@ -12,105 +12,105 @@ const (
 )
 
 type Certificate struct {
-	uid         string
-	did         string
-	privateKey  string
-	certificate string
-	serial      string
+	Uid         string
+	Did         string
+	PrivateKey  string
+	Certificate string
+	Serial      string
 
-	creationDateTime   time.Time
-	validTill          time.Time
-	withdrawalDateTime time.Time
+	CreationDateTime   time.Time
+	ValidTill          time.Time
+	WithdrawalDateTime time.Time
 
-	status int
+	Status int
 }
 
 func (c *Certificate) SetDid(value string) {
-	c.did = value
+	c.Did = value
 }
 
-func (c Certificate) Did() string {
-	return c.did
+func (c Certificate) GetDid() string {
+	return c.Did
 }
 
 func (c *Certificate) SetUid(value string) {
-	c.uid = value
+	c.Uid = value
 }
 
-func (c Certificate) Uid() string {
-	return c.uid
+func (c Certificate) GetUid() string {
+	return c.Uid
 }
 
 func (c *Certificate) SetPrivateKey(value string) {
-	c.privateKey = base64.StdEncoding.EncodeToString([]byte(value))
+	c.PrivateKey = base64.StdEncoding.EncodeToString([]byte(value))
 }
 
-func (c Certificate) PrivateKey() string {
-	s, _ := base64.StdEncoding.DecodeString(c.privateKey)
+func (c Certificate) GetPrivateKey() string {
+	s, _ := base64.StdEncoding.DecodeString(c.PrivateKey)
 	return string(s)
 }
 
-func (c Certificate) PrivateKeyBase64() string {
-	return c.privateKey
+func (c Certificate) GetPrivateKeyBase64() string {
+	return c.PrivateKey
 }
 
 func (c *Certificate) SetCertificate(value string) {
-	c.certificate = base64.StdEncoding.EncodeToString([]byte(value))
+	c.Certificate = base64.StdEncoding.EncodeToString([]byte(value))
 }
 
-func (c Certificate) Certificate() string {
-	s, _ := base64.StdEncoding.DecodeString(c.certificate)
+func (c Certificate) GetCertificate() string {
+	s, _ := base64.StdEncoding.DecodeString(c.Certificate)
 	return string(s)
 }
 
-func (c Certificate) CertificateBase64() string {
-	return c.certificate
+func (c Certificate) GetCertificateBase64() string {
+	return c.Certificate
 }
 
 func (c *Certificate) SetSerial(value string) {
-	c.serial = value
+	c.Serial = value
 }
 
-func (c Certificate) Serial() string {
-	return c.serial
+func (c Certificate) GetSerial() string {
+	return c.Serial
 }
 
 func (c *Certificate) SetCreationDateTime(value time.Time) {
-	c.creationDateTime = value
+	c.CreationDateTime = value
 }
 
-func (c Certificate) CreationDateTime() time.Time {
-	return c.creationDateTime
+func (c Certificate) GetCreationDateTime() time.Time {
+	return c.CreationDateTime
 }
 
 func (c *Certificate) SetValidTill(value time.Time) {
-	c.validTill = value
+	c.ValidTill = value
 }
 
-func (c Certificate) ValidTill() time.Time {
-	return c.validTill
+func (c Certificate) GetValidTill() time.Time {
+	return c.ValidTill
 }
 
 func (c *Certificate) SetWithdrawalDateTime(value time.Time) {
-	c.withdrawalDateTime = value
+	c.WithdrawalDateTime = value
 }
 
-func (c Certificate) WithdrawalDateTime() time.Time {
-	return c.withdrawalDateTime
+func (c Certificate) GetWithdrawalDateTime() time.Time {
+	return c.WithdrawalDateTime
 }
 
-func (c Certificate) Status() int {
-	return c.status
+func (c Certificate) GetStatus() int {
+	return c.Status
 }
 
 func (c *Certificate) SetActive() {
-	c.status = STATUS_ACTIVE
+	c.Status = STATUS_ACTIVE
 }
 
 func (c *Certificate) SetWithdrawn() {
-	c.status = STATUS_WITHDRAWN
+	c.Status = STATUS_WITHDRAWN
 }
 
 func (c *Certificate) SetNotActive() {
-	c.status = STATUS_NOT_ACTIVE
+	c.Status = STATUS_NOT_ACTIVE
 }
