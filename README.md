@@ -129,7 +129,7 @@ Each response contain json structure with required fields ```uid```, ```did```, 
 }
 ```
 
-Response:
+- Response:
 ```
 {
   "uid":"08cbef46-c6d2-11e7-abc4-cec278b6b50f",
@@ -156,7 +156,7 @@ Response:
 }
 ```
 
-Response:
+- Response:
 ```
 {
   "uid":"08cbef46-c6d2-11e7-abc4-cec278b6b50f",
@@ -183,7 +183,7 @@ Response:
 }
 ```
 
-Response:
+- Response:
 ```
 {
   "uid":"08cbef46-c6d2-11e7-abc4-cec278b6b50f",
@@ -206,7 +206,7 @@ Response:
 }
 ```
 
-Response:
+- Response:
 
 ```
 {
