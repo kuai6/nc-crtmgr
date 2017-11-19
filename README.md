@@ -119,9 +119,9 @@ Each response contain json structure with required fields ```uid```, ```did```, 
 
 #### Generate certificate request
 
-Method: POST
-Endpoint: /api/v1/generate
-Post data:
+- Method: POST
+- Endpoint: /api/v1/generate
+- Post data:
 ```
 {
   "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50d",
@@ -145,9 +145,9 @@ Response:
 
 #### Generate certificate with encrypted private key
 
-Method: POST
-Endpoint: /api/v1/generate
-Post data:
+- Method: POST
+- Endpoint: /api/v1/generate
+- Post data:
 ```
 {
   "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50d",
@@ -172,9 +172,9 @@ Response:
 
 #### Validate certificate
 
-Method: POST
-Endpoint: /api/v1/validate
-Post data:
+- Method: POST
+- Endpoint: /api/v1/validate
+- Post data:
 ```
 {
   "did": "fc6e1864-c6d1-11e7-abc4-cec278b6b50d",
@@ -195,9 +195,9 @@ Response:
 
 #### Withdrawal certificate
 
-Method: POST
-Endpoint: /api/v1/validate
-Post data:
+- Method: POST
+- Endpoint: /api/v1/validate
+- Post data:
 ```
 {
   "uid":"08cbef46-c6d2-11e7-abc4-cec278b6b50f",
