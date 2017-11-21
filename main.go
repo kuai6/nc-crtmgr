@@ -399,7 +399,7 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	done := make(chan WithdrawalResponse)
 	go func() {
 		var response WithdrawalResponse
-		response.Uid = wr.Did
+		response.Uid = wr.Uid
 		response.Did = wr.Did
 		response.Result = true
 
