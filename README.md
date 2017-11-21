@@ -196,7 +196,7 @@ Each response contain json structure with required fields ```uid```, ```did```, 
 #### Withdrawal certificate
 
 - Method: POST
-- Endpoint: /api/v1/validate
+- Endpoint: /api/v1/withdrawal
 - Post data:
 ```
 {
